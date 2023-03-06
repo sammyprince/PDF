@@ -253,6 +253,9 @@ public:
     /// Returns true, if page content processing is being cancelled
     bool isProcessingCancelled() const;
 
+    /// Returns true, if we are in a text processing
+    bool isTextProcessing() const;
+
 protected:
 
     struct PDFTransparencyGroup
@@ -547,6 +550,15 @@ protected:
         AfterOperation
     };
 
+    /// This function is used, when we directly want to intercept content
+    /// stream instructions and operands.
+    /// \param currentOperator Current operator
+    /// \param processOrder Mark before/after instruction is executed
+    /// \param operatorAsText Operator converted to text
+    virtual void performInterceptInstruction(Operator currentOperator,
+                                             ProcessOrder processOrder,
+                                             const QByteArray& operatorAsText);
+
     /// This function has to be implemented in the client drawing implementation, it should
     /// draw the path according to the parameters.
     /// \param path Path, which should be drawn (can be emtpy - in that case nothing happens)
@@ -645,6 +657,9 @@ protected:
     /// Implement to respond to text end operator
     virtual void performTextEnd(ProcessOrder order);
 
+    /// Implement to respond to text sequence processing
+    virtual void performProcessTextSequence(const TextSequence& textSequence, ProcessOrder order);
+
     enum class ContentKind
     {
         Shapes,     ///< General shapes (they can be also shaded / tiled)
@@ -652,6 +667,7 @@ protected:
         Images,     ///< Images
         Shading,    ///< Shading
         Tiling,     ///< Tiling
+        Forms,      ///< Forms
     };
 
     /// Override this function to disable particular content type (for example
@@ -705,6 +721,9 @@ protected:
 
     /// Returns optional content activity
     const PDFOptionalContentActivity* getOptionalContentActivity() const { return m_optionalContentActivity; }
+
+    /// Returns operand for current operator
+    const PDFFlatArray<PDFLexicalAnalyzer::Token, 33>& getOperands() const { return m_operands; }
 
     class PDF4QTLIBCORESHARED_EXPORT PDFTransparencyGroupGuard
     {
@@ -857,8 +876,6 @@ private:
     template<typename... Operands>
     inline QColor getColorFromColorSpace(const PDFAbstractColorSpace* colorSpace, Operands... operands)
     {
-
-
         constexpr const size_t operandCount = sizeof...(Operands);
         const size_t colorSpaceComponentCount = colorSpace->getColorComponentCount();
         if (operandCount == colorSpaceComponentCount)

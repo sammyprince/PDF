@@ -89,6 +89,7 @@ public:
     enum ManipulationModes : uint
     {
         None = 0,
+        Select,
         Translate,
         Top,
         Left,
