@@ -32,6 +32,26 @@
 namespace pdf
 {
 
+QRectF PDFPageContentElementEditedContentTextBox::getRectangle() const
+{
+    return m_rectangle;
+}
+
+void PDFPageContentElementEditedContentTextBox::setRectangle(const QRectF& newRectangle)
+{
+    m_rectangle = newRectangle;
+}
+
+PDFInteger PDFPageContentElementEditedContentTextBox::getContentId() const
+{
+    return m_contentId;
+}
+
+void PDFPageContentElementEditedContentTextBox::setContentId(PDFInteger newContentId)
+{
+    m_contentId = newContentId;
+}
+
 PDFInteger PDFPageContentElement::getPageIndex() const
 {
     return m_pageIndex;
@@ -60,6 +80,7 @@ Qt::CursorShape PDFPageContentElement::getCursorShapeForManipulationMode(uint mo
         case Pt1:
         case Pt2:
         case Translate:
+        case Select:
             return Qt::ArrowCursor;
 
         case Top:
@@ -153,6 +174,7 @@ void PDFPageContentElement::performRectangleManipulation(QRectF& rectangle,
     switch (mode)
     {
         case None:
+        case Select:
             break;
 
         case Translate:
@@ -2532,4 +2554,60 @@ void PDFPageContentElementTextBox::setAlignment(const Qt::Alignment& newAlignmen
     m_alignment = newAlignment;
 }
 
+PDFPageContentElement* PDFPageContentElementEditedContentTextBox::clone() const
+{
+    PDFPageContentElementEditedContentTextBox* copy = new PDFPageContentElementEditedContentTextBox();
+    copy->setElementId(getElementId());
+    copy->setPageIndex(getPageIndex());
+    copy->setRectangle(getRectangle());
+    copy->setContentId(getContentId());
+    return copy;
+}
+
+void PDFPageContentElementEditedContentTextBox::drawPage(QPainter* painter, PDFInteger pageIndex, const PDFPrecompiledPage* compiledPage, PDFTextLayoutGetter& layoutGetter, const QTransform& pagePointToDevicePointMatrix, QList<PDFRenderError>& errors) const
+{
+    PDFPainterStateGuard guard(painter);
+
+    QPainterPath path;
+    QRectF rect = getRectangle();
+    qreal radius = qMin(rect.width(), rect.height()) * 0.05;
+    path.addRoundedRect(getRectangle(), radius, radius, Qt::AbsoluteSize);
+    path = pagePointToDevicePointMatrix.map(path);
+
+    QPen pen(Qt::DashLine);
+    painter->setPen(std::move(pen));
+    painter->setBrush(Qt::NoBrush);
+    painter->setRenderHint(QPainter::Antialiasing);
+    painter->drawPath(path);
+}
+
+uint PDFPageContentElementEditedContentTextBox::getManipulationMode(const QPointF& point, PDFReal snapPointDistanceThreshold) const
+{
+    uint rectangleManipulationMode = getRectangleManipulationMode(getRectangle(), point, snapPointDistanceThreshold);
+    return rectangleManipulationMode != 0 ? Select : None;
+}
+
+void PDFPageContentElementEditedContentTextBox::performManipulation(uint mode, const QPointF& offset)
+{
+    Q_UNUSED(mode);
+    Q_UNUSED(offset);
+}
+
+QRectF PDFPageContentElementEditedContentTextBox::getBoundingBox() const
+{
+    return m_rectangle;
+}
+
+void PDFPageContentElementEditedContentTextBox::setSize(QSizeF size)
+{
+    Q_UNUSED(size);
+}
+
+QString PDFPageContentElementEditedContentTextBox::getDescription() const
+{
+    return formatDescription(PDFTranslationContext::tr("Content Text %1:%2").arg(getPageIndex() + 1).arg(getContentId()));
+}
+
 }   // namespace pdf
+
+

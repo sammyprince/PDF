@@ -1,4 +1,4 @@
-//    Copyright (C) 2022 Jakub Melka
+//    Copyright (C) 2023 Jakub Melka
 //
 //    This file is part of PDF4QT.
 //
@@ -15,12 +15,13 @@
 //    You should have received a copy of the GNU Lesser General Public License
 //    along with PDF4QT.  If not, see <https://www.gnu.org/licenses/>.
 
-#ifndef SIGNATURESPLUGIN_H
-#define SIGNATURESPLUGIN_H
+#ifndef EDITORSPLUGIN_H
+#define EDITORSPLUGIN_H
 
 #include "pdfplugin.h"
 #include "pdfpagecontentelements.h"
 #include "pdfpagecontenteditortools.h"
+#include "pdfpagecontenteditorprocessor.h"
 
 #include <QObject>
 
@@ -32,16 +33,16 @@ class PDFPageContentEditorWidget;
 namespace pdfplugin
 {
 
-class SignaturePlugin : public pdf::PDFPlugin
+class EditorPlugin : public pdf::PDFPlugin
 {
     Q_OBJECT
-    Q_PLUGIN_METADATA(IID "PDF4QT.SignaturePlugin" FILE "SignaturePlugin.json")
+    Q_PLUGIN_METADATA(IID "PDF4QT.EditorPlugin" FILE "EditorPlugin.json")
 
 private:
     using BaseClass = pdf::PDFPlugin;
 
 public:
-    SignaturePlugin();
+    EditorPlugin();
 
     virtual void setWidget(pdf::PDFWidget* widget) override;
     virtual void setDocument(const pdf::PDFModifiedDocument& document) override;
@@ -53,9 +54,6 @@ private:
     void onWidgetSelectionChanged();
     void onToolActivityChanged();
     void onSceneEditElement(const std::set<pdf::PDFInteger>& elements);
-    void onSignElectronically();
-    void onSignDigitally();
-    void onOpenCertificatesManager();
 
     void onPenChanged(const QPen& pen);
     void onBrushChanged(const QBrush& brush);
@@ -82,11 +80,6 @@ private:
         SvgImage,
         Clear,
 
-        // Sign actions
-        SignElectronically,
-        SignDigitally,
-        Certificates,
-
         LastAction
     };
 
@@ -111,19 +104,21 @@ private:
     void updateActions();
     void updateGraphics();
     void updateDockWidget();
+    void updateEditedPages();
+
+    void onDrawSpaceChanged();
 
     pdf::PDFWidgetTool* getActiveTool();
-
-    QString getSignedFileName() const;
 
     std::array<QAction*, LastAction> m_actions;
     std::array<pdf::PDFWidgetTool*, LastTool> m_tools;
     pdf::PDFPageContentEditorWidget* m_editorWidget;
 
     pdf::PDFPageContentScene m_scene;
+    std::map<pdf::PDFInteger, pdf::PDFEditedPageContent> m_editedPageContent;
     bool m_sceneSelectionChangeEnabled;
 };
 
 }   // namespace pdfplugin
 
-#endif // SIGNATURESPLUGIN_H
+#endif // EDITORSPLUGIN_H

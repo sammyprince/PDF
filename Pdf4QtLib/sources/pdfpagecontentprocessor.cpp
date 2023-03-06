@@ -24,6 +24,7 @@
 #include "pdfstreamfilters.h"
 #include "pdfdbgheap.h"
 
+#include <QScopeGuard>
 #include <QPainterPathStroker>
 
 namespace pdf
@@ -483,6 +484,12 @@ void PDFPageContentProcessor::performTextEnd(ProcessOrder order)
     Q_UNUSED(order);
 }
 
+void PDFPageContentProcessor::performProcessTextSequence(const TextSequence& textSequence, ProcessOrder order)
+{
+    Q_UNUSED(textSequence);
+    Q_UNUSED(order);
+}
+
 bool PDFPageContentProcessor::isContentKindSuppressed(ContentKind kind) const
 {
     Q_UNUSED(kind);
@@ -524,6 +531,15 @@ PDFPageContentProcessor::PDFTransparencyGroup PDFPageContentProcessor::parseTran
     }
 
     return group;
+}
+
+void PDFPageContentProcessor::performInterceptInstruction(Operator currentOperator,
+                                                          ProcessOrder processOrder,
+                                                          const QByteArray& operatorAsText)
+{
+    Q_UNUSED(currentOperator);
+    Q_UNUSED(processOrder);
+    Q_UNUSED(operatorAsText);
 }
 
 void PDFPageContentProcessor::processContent(const QByteArray& content)
@@ -736,6 +752,12 @@ void PDFPageContentProcessor::processForm(const QTransform& matrix,
                                           const QByteArray& content,
                                           PDFInteger formStructuralParent)
 {
+    if (isContentKindSuppressed(ContentKind::Forms))
+    {
+        // Process of forms is suppressed
+        return;
+    }
+
     PDFPageContentProcessorStateGuard guard(this);
     PDFTemporaryValueChange structuralParentChangeGuard(&m_structuralParentKey, formStructuralParent);
 
@@ -1126,6 +1148,9 @@ void PDFPageContentProcessor::processCommand(const QByteArray& command)
             break;
         }
     }
+
+    performInterceptInstruction(op, ProcessOrder::BeforeOperation, command);
+    auto callInterceptInstAtEnd = qScopeGuard([&, this](){ performInterceptInstruction(op, ProcessOrder::AfterOperation, command); });
 
     switch (op)
     {
@@ -1851,6 +1876,11 @@ void PDFPageContentProcessor::setOperationControl(const PDFOperationControl* new
 bool PDFPageContentProcessor::isProcessingCancelled() const
 {
     return m_operationControl && m_operationControl->isOperationCancelled();
+}
+
+bool PDFPageContentProcessor::isTextProcessing() const
+{
+    return m_textBeginEndState > 0;
 }
 
 void PDFPageContentProcessor::reportRenderErrorOnce(RenderErrorType type, QString message)
@@ -3005,6 +3035,12 @@ void PDFPageContentProcessor::reportWarningAboutColorOperatorsInUTP()
 
 void PDFPageContentProcessor::processForm(const PDFStream* stream)
 {
+    if (isContentKindSuppressed(ContentKind::Forms))
+    {
+        // Process of forms is suppressed
+        return;
+    }
+
     PDFDocumentDataLoaderDecorator loader(getDocument());
     const PDFDictionary* streamDictionary = stream->getDictionary();
 

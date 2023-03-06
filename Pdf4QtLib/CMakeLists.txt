@@ -100,6 +100,8 @@ add_library(Pdf4QtLib SHARED
     sources/pdfobjecteditorwidget_impl.h
     sources/pdfdocumentsanitizer.h
     sources/pdfdocumentsanitizer.cpp
+    sources/pdfpagecontenteditorprocessor.h
+    sources/pdfpagecontenteditorprocessor.cpp
     cmaps.qrc
 )
 

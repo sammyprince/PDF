@@ -87,6 +87,7 @@ public:
     enum ManipulationModes : uint
     {
         None = 0,
+        Select,
         Translate,
         Top,
         Left,
@@ -349,6 +350,30 @@ private:
     QFont m_font;
     PDFReal m_angle = 0.0;
     Qt::Alignment m_alignment = Qt::AlignCenter;
+};
+
+class PDF4QTLIBSHARED_EXPORT PDFPageContentElementEditedContentTextBox : public PDFPageContentElement
+{
+public:
+    virtual ~PDFPageContentElementEditedContentTextBox() = default;
+
+    virtual PDFPageContentElement* clone() const override;
+    virtual void drawPage(QPainter* painter, PDFInteger pageIndex, const PDFPrecompiledPage* compiledPage, PDFTextLayoutGetter& layoutGetter, const QTransform& pagePointToDevicePointMatrix, QList<PDFRenderError>& errors) const override;
+    virtual uint getManipulationMode(const QPointF& point, PDFReal snapPointDistanceThreshold) const override;
+    virtual void performManipulation(uint mode, const QPointF& offset) override;
+    virtual QRectF getBoundingBox() const override;
+    virtual void setSize(QSizeF size) override;
+    virtual QString getDescription() const override;
+
+    QRectF getRectangle() const;
+    void setRectangle(const QRectF& newRectangle);
+
+    PDFInteger getContentId() const;
+    void setContentId(PDFInteger newContentId);
+
+private:
+    QRectF m_rectangle;
+    PDFInteger m_contentId = 0;
 };
 
 class PDF4QTLIBSHARED_EXPORT PDFPageContentElementManipulator : public QObject
