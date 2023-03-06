@@ -61,6 +61,7 @@ Qt::CursorShape PDFPageContentElement::getCursorShapeForManipulationMode(uint mo
         case Pt1:
         case Pt2:
         case Translate:
+        case Select:
             return Qt::ArrowCursor;
 
         case Top:
@@ -154,6 +155,7 @@ void PDFPageContentElement::performRectangleManipulation(QRectF& rectangle,
     switch (mode)
     {
         case None:
+        case Select:
             break;
 
         case Translate:
