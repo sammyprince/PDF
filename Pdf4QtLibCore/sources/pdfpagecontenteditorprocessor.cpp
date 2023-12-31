@@ -27,78 +27,45 @@ PDFPageContentEditorProcessor::PDFPageContentEditorProcessor(const PDFPage* page
                                                              const PDFOptionalContentActivity* optionalContentActivity,
                                                              QTransform pagePointToDevicePointMatrix,
                                                              const PDFMeshQualitySettings& meshQualitySettings) :
-    BaseClass(page, document, fontCache, CMS, optionalContentActivity, pagePointToDevicePointMatrix, meshQualitySettings),
-    m_contentElementId(0)
+    BaseClass(page, document, fontCache, CMS, optionalContentActivity, pagePointToDevicePointMatrix, meshQualitySettings)
 {
-    m_document = QDomDocument();
-
-    QDomProcessingInstruction processingInstruction = m_document.createProcessingInstruction("xml", "version=\"1.0\" encoding=\"utf-8\"");
-    m_document.appendChild(processingInstruction);
-
-    QDomElement element = m_document.createElement("content");
-    m_document.appendChild(element);
-
-    m_currentElement = m_document.documentElement();
+    m_clippingPaths.push(QPainterPath());
 }
 
-PDFEditedPageContent PDFPageContentEditorProcessor::getEditedPageContent() const
+const PDFEditedPageContent& PDFPageContentEditorProcessor::getEditedPageContent() const
 {
-    return PDFEditedPageContent(m_document);
+    return m_content;
+}
+
+PDFEditedPageContent PDFPageContentEditorProcessor::takeEditedPageContent()
+{
+    return std::move(m_content);
 }
 
 void PDFPageContentEditorProcessor::performInterceptInstruction(Operator currentOperator,
                                                                 ProcessOrder processOrder,
                                                                 const QByteArray& operatorAsText)
 {
+    Q_UNUSED(operatorAsText);
+
     if (processOrder == ProcessOrder::BeforeOperation)
     {
         if (currentOperator == Operator::TextBegin && !isTextProcessing())
         {
-            m_textElement = m_document.createElement("text");
-            m_textElement.setAttribute("id", ++m_contentElementId);
-            m_document.documentElement().appendChild(m_textElement);
-            m_currentElement = m_textElement;
-            m_boundingRect = QRectF();
-        }
-
-        QDomElement instructionElement = m_document.createElement("op");
-        m_currentElement.appendChild(instructionElement);
-        instructionElement.setAttribute("type", QString::fromLatin1(operatorAsText));
-        instructionElement.setAttribute("code", int(currentOperator));
-
-        const auto& operands = getOperands();
-        if (!operands.empty())
-        {
-            const size_t operandCount = operands.size();
-            for (size_t i = 0; i < operandCount; ++i)
-            {
-                const PDFLexicalAnalyzer::Token& token = operands[i];
-                QDomElement operandElement = m_document.createElement("par");
-                instructionElement.appendChild(operandElement);
-                operandElement.setAttribute("type", int(token.type));
-                operandElement.setAttribute("value", token.data.toString());
-            }
+            m_contentElementText.reset(new PDFEditedPageContentElementText(*getGraphicState()));
         }
     }
     else
     {
         if (currentOperator == Operator::TextEnd && !isTextProcessing())
         {
-            m_currentElement = m_document.documentElement();
-
-            if (!m_boundingRect.isEmpty())
+            if (m_contentElementText && !m_contentElementText->isEmpty())
             {
-                QDomElement boundingBoxElement = m_document.createElement("bb");
-                m_textElement.appendChild(boundingBoxElement);
-
-                boundingBoxElement.setAttribute("x", QString::number(m_boundingRect.x()));
-                boundingBoxElement.setAttribute("y", QString::number(m_boundingRect.y()));
-                boundingBoxElement.setAttribute("width", QString::number(m_boundingRect.width()));
-                boundingBoxElement.setAttribute("height", QString::number(m_boundingRect.height()));
+                m_content.addContentElement(std::move(m_contentElementText));
             }
+            m_contentElementText.reset();
 
-            m_textElement = QDomElement();
-            m_boundingRect = QRectF();
+            m_textBoundingRect = QRectF();
         }
     }
 }
@@ -115,17 +82,83 @@ void PDFPageContentEditorProcessor::performPathPainting(const QPainterPath& path
     Q_UNUSED(fill);
     Q_UNUSED(text);
 
-    QPainterPath mappedPath = getCurrentWorldMatrix().map(path);
-    QRectF boundingRect = mappedPath.boundingRect();
-    m_boundingRect = m_boundingRect.united(boundingRect);
+    if (text)
+    {
+        QPainterPath mappedPath = getCurrentWorldMatrix().map(path);
+        QRectF boundingRect = mappedPath.boundingRect();
+        m_textBoundingRect = m_textBoundingRect.united(boundingRect);
+    }
+    else
+    {
+        m_content.addContentPath(*getGraphicState(), path, stroke, fill);
+    }
+}
+
+void PDFPageContentEditorProcessor::performUpdateGraphicsState(const PDFPageContentProcessorState& state)
+{
+    if (isTextProcessing() && m_contentElementText)
+    {
+        PDFEditedPageContentElementText::Item item;
+        item.isUpdateGraphicState = true;
+        item.state = state;
+
+        m_contentElementText->addItem(item);
+    }
+}
+
+bool PDFPageContentEditorProcessor::performOriginalImagePainting(const PDFImage& image, const PDFStream* stream)
+{
+    Q_UNUSED(image);
+
+    PDFObject imageObject = PDFObject::createStream(std::make_shared<PDFStream>(*stream));
+    m_content.addContentImage(*getGraphicState(), std::move(imageObject), QImage());
+
+    return false;
+}
+
+void PDFPageContentEditorProcessor::performImagePainting(const QImage& image)
+{
+    PDFEditedPageContentElement* backElement = m_content.getBackElement();
+    Q_ASSERT(backElement);
+
+    PDFEditedPageContentElementImage* imageElement = backElement->asImage();
+    imageElement->setImage(image);
+}
+
+void PDFPageContentEditorProcessor::performSaveGraphicState(ProcessOrder order)
+{
+    if (order == ProcessOrder::BeforeOperation)
+    {
+        m_clippingPaths.push(m_clippingPaths.top());
+    }
+}
+
+void PDFPageContentEditorProcessor::performRestoreGraphicState(ProcessOrder order)
+{
+    if (order == ProcessOrder::AfterOperation)
+    {
+        m_clippingPaths.pop();
+    }
+}
+
+void PDFPageContentEditorProcessor::performClipping(const QPainterPath& path, Qt::FillRule fillRule)
+{
+    Q_UNUSED(fillRule);
+
+    if (m_clippingPaths.top().isEmpty())
+    {
+        m_clippingPaths.top() = path;
+    }
+    else
+    {
+        m_clippingPaths.top() = m_clippingPaths.top().intersected(path);
+    }
 }
 
 bool PDFPageContentEditorProcessor::isContentKindSuppressed(ContentKind kind) const
 {
     switch (kind)
     {
-        case ContentKind::Images:
-        case ContentKind::Forms:
         case ContentKind::Shading:
         case ContentKind::Tiling:
             return true;
@@ -135,214 +168,6 @@ bool PDFPageContentEditorProcessor::isContentKindSuppressed(ContentKind kind) co
     }
 
     return false;
-}
-
-PDFEditedPageContent::PDFEditedPageContent(QDomDocument content) :
-    m_content(std::move(content))
-{
-    m_contentAsString = m_content.toString(2);
-}
-
-QDomNodeList PDFEditedPageContent::getTextElements() const
-{
-    return m_content.elementsByTagName("text");
-}
-
-std::vector<PDFEditedPageContent::ContentTextInfo> PDFEditedPageContent::getTextInfos() const
-{
-    std::vector<PDFEditedPageContent::ContentTextInfo> result;
-
-    QDomNodeList textElements = getTextElements();
-    for (int i = 0; i < textElements.size(); ++i)
-    {
-        ContentTextInfo info;
-        QDomElement textElement = textElements.at(i).toElement();
-        QDomElement boundingBoxElement = textElement.firstChildElement("bb");
-
-        info.id = textElement.attribute("id").toInt();
-        info.textElement = textElement;
-
-        if (!boundingBoxElement.isNull())
-        {
-            qreal x = boundingBoxElement.attribute("x").toDouble();
-            qreal y = boundingBoxElement.attribute("y").toDouble();
-            qreal w = boundingBoxElement.attribute("width").toDouble();
-            qreal h = boundingBoxElement.attribute("height").toDouble();
-
-            info.boundingRectangle = QRectF(x, y, w, h);
-        }
-
-        result.push_back(info);
-    }
-
-    return result;
-}
-
-QString PDFEditedPageContent::getStringFromOperator(QDomElement operatorElement)
-{
-    QString operatorString = operatorElement.attribute("code");
-    PDFPageContentProcessor::Operator operand = static_cast<PDFPageContentProcessor::Operator>(operatorString.toInt());
-
-    auto getOperand = [](int index) -> QString
-    {
-
-    };
-
-    switch (operand)
-    {
-        case pdf::PDFPageContentProcessor::Operator::SetLineWidth:
-            break;
-
-        case pdf::PDFPageContentProcessor::Operator::SetLineCap:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::SetLineJoin:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::SetMitterLimit:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::SetLineDashPattern:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::SetRenderingIntent:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::SetFlatness:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::SetGraphicState:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::SaveGraphicState:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::RestoreGraphicState:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::AdjustCurrentTransformationMatrix:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::MoveCurrentPoint:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::LineTo:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::Bezier123To:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::Bezier23To:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::Bezier13To:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::EndSubpath:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::Rectangle:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::PathStroke:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::PathCloseStroke:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::PathFillWinding:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::PathFillWinding2:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::PathFillEvenOdd:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::PathFillStrokeWinding:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::PathFillStrokeEvenOdd:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::PathCloseFillStrokeWinding:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::PathCloseFillStrokeEvenOdd:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::PathClear:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::ClipWinding:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::ClipEvenOdd:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::TextBegin:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::TextEnd:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::TextSetCharacterSpacing:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::TextSetWordSpacing:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::TextSetHorizontalScale:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::TextSetLeading:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::TextSetFontAndFontSize:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::TextSetRenderMode:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::TextSetRise:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::TextMoveByOffset:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::TextSetLeadingAndMoveByOffset:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::TextSetMatrix:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::TextMoveByLeading:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::TextShowTextString:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::TextShowTextIndividualSpacing:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::TextNextLineShowText:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::TextSetSpacingAndShowText:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::Type3FontSetOffset:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::Type3FontSetOffsetAndBB:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::ColorSetStrokingColorSpace:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::ColorSetFillingColorSpace:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::ColorSetStrokingColor:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::ColorSetStrokingColorN:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::ColorSetFillingColor:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::ColorSetFillingColorN:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::ColorSetDeviceGrayStroking:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::ColorSetDeviceGrayFilling:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::ColorSetDeviceRGBStroking:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::ColorSetDeviceRGBFilling:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::ColorSetDeviceCMYKStroking:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::ColorSetDeviceCMYKFilling:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::ShadingPaintShape:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::InlineImageBegin:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::InlineImageData:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::InlineImageEnd:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::PaintXObject:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::MarkedContentPoint:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::MarkedContentPointWithProperties:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::MarkedContentBegin:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::MarkedContentBeginWithProperties:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::MarkedContentEnd:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::CompatibilityBegin:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::CompatibilityEnd:
-            break;
-
-        default:
-            break;
-    }
-
-    return QString();
 }
 
 QString PDFEditedPageContent::getOperatorToString(PDFPageContentProcessor::Operator operatorValue)
@@ -575,60 +400,204 @@ QString PDFEditedPageContent::getOperandName(PDFPageContentProcessor::Operator o
     }
 
     return QString("op%1").arg(operandIndex);
+}
 
-    /*
-        case pdf::PDFPageContentProcessor::Operator::Type3FontSetOffset:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::Type3FontSetOffsetAndBB:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::ColorSetStrokingColorSpace:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::ColorSetFillingColorSpace:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::ColorSetStrokingColor:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::ColorSetStrokingColorN:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::ColorSetFillingColor:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::ColorSetFillingColorN:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::ColorSetDeviceGrayStroking:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::ColorSetDeviceGrayFilling:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::ColorSetDeviceRGBStroking:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::ColorSetDeviceRGBFilling:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::ColorSetDeviceCMYKStroking:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::ColorSetDeviceCMYKFilling:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::ShadingPaintShape:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::InlineImageBegin:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::InlineImageData:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::InlineImageEnd:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::PaintXObject:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::MarkedContentPoint:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::MarkedContentPointWithProperties:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::MarkedContentBegin:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::MarkedContentBeginWithProperties:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::MarkedContentEnd:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::CompatibilityBegin:
-            break;
-        case pdf::PDFPageContentProcessor::Operator::CompatibilityEnd:
-            break;*/
+void PDFEditedPageContent::addContentPath(PDFPageContentProcessorState state, QPainterPath path, bool strokePath, bool fillPath)
+{
+    m_contentElements.emplace_back(new PDFEditedPageContentElementPath(std::move(state), std::move(path), strokePath, fillPath));
+}
+
+void PDFEditedPageContent::addContentImage(PDFPageContentProcessorState state, PDFObject imageObject, QImage image)
+{
+    m_contentElements.emplace_back(new PDFEditedPageContentElementImage(std::move(state), std::move(imageObject), std::move(image)));
+}
+
+void PDFEditedPageContent::addContentClipping(PDFPageContentProcessorState state, QPainterPath path)
+{
+    m_contentElements.emplace_back(new PDFEditedPageContentElementClipping(std::move(state), std::move(path)));
+}
+
+void PDFEditedPageContent::addContentElement(std::unique_ptr<PDFEditedPageContentElement> element)
+{
+    m_contentElements.emplace_back(std::move(element));
+}
+
+PDFEditedPageContentElement* PDFEditedPageContent::getBackElement() const
+{
+    if (m_contentElements.empty())
+    {
+        return nullptr;
+    }
+
+    return m_contentElements.back().get();
+}
+
+PDFEditedPageContentElement::PDFEditedPageContentElement(PDFPageContentProcessorState state) :
+    m_state(std::move(state))
+{
+
+}
+
+const PDFPageContentProcessorState& PDFEditedPageContentElement::getState() const
+{
+    return m_state;
+}
+
+void PDFEditedPageContentElement::setState(const PDFPageContentProcessorState& newState)
+{
+    m_state = newState;
+}
+
+PDFEditedPageContentElementPath::PDFEditedPageContentElementPath(PDFPageContentProcessorState state, QPainterPath path, bool strokePath, bool fillPath) :
+    PDFEditedPageContentElement(std::move(state)),
+    m_path(std::move(path)),
+    m_strokePath(strokePath),
+    m_fillPath(fillPath)
+{
+
+}
+
+PDFEditedPageContentElement::Type PDFEditedPageContentElementPath::getType() const
+{
+    return Type::Path;
+}
+
+PDFEditedPageContentElementPath* PDFEditedPageContentElementPath::clone() const
+{
+    return new PDFEditedPageContentElementPath(getState(), getPath(), getStrokePath(), getFillPath());
+}
+
+QPainterPath PDFEditedPageContentElementPath::getPath() const
+{
+    return m_path;
+}
+
+void PDFEditedPageContentElementPath::setPath(QPainterPath newPath)
+{
+    m_path = newPath;
+}
+
+bool PDFEditedPageContentElementPath::getStrokePath() const
+{
+    return m_strokePath;
+}
+
+void PDFEditedPageContentElementPath::setStrokePath(bool newStrokePath)
+{
+    m_strokePath = newStrokePath;
+}
+
+bool PDFEditedPageContentElementPath::getFillPath() const
+{
+    return m_fillPath;
+}
+
+void PDFEditedPageContentElementPath::setFillPath(bool newFillPath)
+{
+    m_fillPath = newFillPath;
+}
+
+PDFEditedPageContentElementImage::PDFEditedPageContentElementImage(PDFPageContentProcessorState state, PDFObject imageObject, QImage image) :
+    PDFEditedPageContentElement(std::move(state)),
+    m_imageObject(std::move(imageObject)),
+    m_image(std::move(image))
+{
+
+}
+
+PDFEditedPageContentElement::Type PDFEditedPageContentElementImage::getType() const
+{
+    return PDFEditedPageContentElement::Type::Image;
+}
+
+PDFEditedPageContentElementImage* PDFEditedPageContentElementImage::clone() const
+{
+    return new PDFEditedPageContentElementImage(getState(), getImageObject(), getImage());
+}
+
+PDFObject PDFEditedPageContentElementImage::getImageObject() const
+{
+    return m_imageObject;
+}
+
+void PDFEditedPageContentElementImage::setImageObject(const PDFObject& newImageObject)
+{
+    m_imageObject = newImageObject;
+}
+
+QImage PDFEditedPageContentElementImage::getImage() const
+{
+    return m_image;
+}
+
+void PDFEditedPageContentElementImage::setImage(const QImage& newImage)
+{
+    m_image = newImage;
+}
+
+PDFEditedPageContentElementClipping::PDFEditedPageContentElementClipping(PDFPageContentProcessorState state, QPainterPath path) :
+    PDFEditedPageContentElement(std::move(state)),
+    m_path(std::move(path))
+{
+
+}
+
+PDFEditedPageContentElement::Type PDFEditedPageContentElementClipping::getType() const
+{
+    return Type::Clipping;
+}
+
+PDFEditedPageContentElementClipping* PDFEditedPageContentElementClipping::clone() const
+{
+    return new PDFEditedPageContentElementClipping(getState(), getPath());
+}
+
+QPainterPath PDFEditedPageContentElementClipping::getPath() const
+{
+    return m_path;
+}
+
+void PDFEditedPageContentElementClipping::setPath(QPainterPath newPath)
+{
+    m_path = std::move(newPath);
+}
+
+PDFEditedPageContentElementText::PDFEditedPageContentElementText(PDFPageContentProcessorState state) :
+    PDFEditedPageContentElement(state)
+{
+
+}
+
+PDFEditedPageContentElementText::PDFEditedPageContentElementText(PDFPageContentProcessorState state, std::vector<Item> items) :
+    PDFEditedPageContentElement(state),
+    m_items(std::move(items))
+{
+
+}
+
+PDFEditedPageContentElement::Type PDFEditedPageContentElementText::getType() const
+{
+    return Type::Text;
+}
+
+PDFEditedPageContentElementText* PDFEditedPageContentElementText::clone() const
+{
+    return new PDFEditedPageContentElementText(getState(), getItems());
+}
+
+void PDFEditedPageContentElementText::addItem(Item item)
+{
+    m_items.emplace_back(std::move(item));
+}
+
+const std::vector<PDFEditedPageContentElementText::Item>& PDFEditedPageContentElementText::getItems() const
+{
+    return m_items;
+}
+
+void PDFEditedPageContentElementText::setItems(const std::vector<Item>& newItems)
+{
+    m_items = newItems;
 }
 
 }   // namespace pdf

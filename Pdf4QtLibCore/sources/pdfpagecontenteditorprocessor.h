@@ -20,37 +20,175 @@
 
 #include "pdfpagecontentprocessor.h"
 
-#include <QtXml>
+#include <memory>
 
 namespace pdf
 {
 
-class PDF4QTLIBSHARED_EXPORT PDFEditedPageContent
+class PDFEditedPageContentElementPath;
+class PDFEditedPageContentElementText;
+class PDFEditedPageContentElementImage;
+class PDFEditedPageContentElementClipping;
+
+class PDFEditedPageContentElement
+{
+public:
+    PDFEditedPageContentElement() = default;
+    PDFEditedPageContentElement(PDFPageContentProcessorState state);
+    virtual ~PDFEditedPageContentElement() = default;
+
+    enum class Type
+    {
+        Path,
+        Text,
+        Clipping,
+        Image
+    };
+
+    virtual Type getType() const = 0;
+    virtual PDFEditedPageContentElement* clone() const = 0;
+
+    virtual PDFEditedPageContentElementPath* asPath() { return nullptr; }
+    virtual const PDFEditedPageContentElementPath* asPath() const { return nullptr; }
+
+    virtual PDFEditedPageContentElementText* asText() { return nullptr; }
+    virtual const PDFEditedPageContentElementText* asText() const { return nullptr; }
+
+    virtual PDFEditedPageContentElementClipping* asClipping() { return nullptr; }
+    virtual const PDFEditedPageContentElementClipping* asClipping() const { return nullptr; }
+
+    virtual PDFEditedPageContentElementImage* asImage() { return nullptr; }
+    virtual const PDFEditedPageContentElementImage* asImage() const { return nullptr; }
+
+    const PDFPageContentProcessorState& getState() const;
+    void setState(const PDFPageContentProcessorState& newState);
+
+protected:
+    PDFPageContentProcessorState m_state;
+};
+
+class PDFEditedPageContentElementPath : public PDFEditedPageContentElement
+{
+public:
+    PDFEditedPageContentElementPath(PDFPageContentProcessorState state, QPainterPath path, bool strokePath, bool fillPath);
+    virtual ~PDFEditedPageContentElementPath() = default;
+
+    virtual Type getType() const override;
+    virtual PDFEditedPageContentElementPath* clone() const override;
+    virtual PDFEditedPageContentElementPath* asPath() override { return this; }
+    virtual const PDFEditedPageContentElementPath* asPath() const override { return this; }
+
+    QPainterPath getPath() const;
+    void setPath(QPainterPath newPath);
+
+    bool getStrokePath() const;
+    void setStrokePath(bool newStrokePath);
+
+    bool getFillPath() const;
+    void setFillPath(bool newFillPath);
+
+private:
+    QPainterPath m_path;
+    bool m_strokePath;
+    bool m_fillPath;
+};
+
+class PDFEditedPageContentElementClipping : public PDFEditedPageContentElement
+{
+public:
+    PDFEditedPageContentElementClipping(PDFPageContentProcessorState state, QPainterPath path);
+    virtual ~PDFEditedPageContentElementClipping() = default;
+
+    virtual Type getType() const override;
+    virtual PDFEditedPageContentElementClipping* clone() const override;
+    virtual PDFEditedPageContentElementClipping* asClipping() override { return this; }
+    virtual const PDFEditedPageContentElementClipping* asClipping() const override { return this; }
+
+    QPainterPath getPath() const;
+    void setPath(QPainterPath newPath);
+
+private:
+    QPainterPath m_path;
+};
+
+class PDFEditedPageContentElementImage : public PDFEditedPageContentElement
+{
+public:
+    PDFEditedPageContentElementImage(PDFPageContentProcessorState state, PDFObject imageObject, QImage image);
+    virtual ~PDFEditedPageContentElementImage() = default;
+
+    virtual Type getType() const override;
+    virtual PDFEditedPageContentElementImage* clone() const override;
+    virtual PDFEditedPageContentElementImage* asImage() override { return this; }
+    virtual const PDFEditedPageContentElementImage* asImage() const override { return this; }
+
+    PDFObject getImageObject() const;
+    void setImageObject(const PDFObject& newImageObject);
+
+    QImage getImage() const;
+    void setImage(const QImage& newImage);
+
+private:
+    PDFObject m_imageObject;
+    QImage m_image;
+};
+
+class PDFEditedPageContentElementText : public PDFEditedPageContentElement
+{
+public:
+
+    struct Item
+    {
+        bool isUpdateGraphicState = false;
+        bool isText = false;
+
+        PDFPageContentProcessorState state;
+    };
+
+    PDFEditedPageContentElementText(PDFPageContentProcessorState state);
+    PDFEditedPageContentElementText(PDFPageContentProcessorState state, std::vector<Item> items);
+    virtual ~PDFEditedPageContentElementText() = default;
+
+    virtual Type getType() const override;
+    virtual PDFEditedPageContentElementText* clone() const override;
+    virtual PDFEditedPageContentElementText* asText() override { return this; }
+    virtual const PDFEditedPageContentElementText* asText() const override { return this; }
+
+    void addItem(Item item);
+    const std::vector<Item>& getItems() const;
+    void setItems(const std::vector<Item>& newItems);
+
+    bool isEmpty() const { return m_items.empty(); }
+
+private:
+    std::vector<Item> m_items;
+};
+
+class PDFEditedPageContent
 {
 public:
     PDFEditedPageContent() = default;
-    PDFEditedPageContent(QDomDocument content);
+    PDFEditedPageContent(const PDFEditedPageContent&) = delete;
+    PDFEditedPageContent(PDFEditedPageContent&&) = default;
 
-    struct ContentTextInfo
-    {
-        PDFInteger id = 0;
-        QRectF boundingRectangle;
-        QDomElement textElement;
-    };
+    PDFEditedPageContent& operator=(const PDFEditedPageContent&) = delete;
+    PDFEditedPageContent& operator=(PDFEditedPageContent&&) = default;
 
-    QDomNodeList getTextElements() const;
-    std::vector<ContentTextInfo> getTextInfos() const;
-
-    static QString getStringFromOperator(QDomElement operatorElement);
     static QString getOperatorToString(PDFPageContentProcessor::Operator operatorValue);
     static QString getOperandName(PDFPageContentProcessor::Operator operatorValue, int operandIndex);
 
+    void addContentPath(PDFPageContentProcessorState state, QPainterPath path, bool strokePath, bool fillPath);
+    void addContentImage(PDFPageContentProcessorState state, PDFObject imageObject, QImage image);
+    void addContentClipping(PDFPageContentProcessorState state, QPainterPath path);
+    void addContentElement(std::unique_ptr<PDFEditedPageContentElement> element);
+
+    PDFEditedPageContentElement* getBackElement() const;
+
 private:
-    QDomDocument m_content;
-    QString m_contentAsString;
+    std::vector<std::unique_ptr<PDFEditedPageContentElement>> m_contentElements;
 };
 
-class PDF4QTLIBSHARED_EXPORT PDFPageContentEditorProcessor : public PDFPageContentProcessor
+class PDF4QTLIBCORESHARED_EXPORT PDFPageContentEditorProcessor : public PDFPageContentProcessor
 {
     using BaseClass = PDFPageContentProcessor;
 
@@ -63,19 +201,25 @@ public:
                                   QTransform pagePointToDevicePointMatrix,
                                   const PDFMeshQualitySettings& meshQualitySettings);
 
-    PDFEditedPageContent getEditedPageContent() const;
+    const PDFEditedPageContent& getEditedPageContent() const;
+    PDFEditedPageContent takeEditedPageContent();
 
 protected:
     virtual void performInterceptInstruction(Operator currentOperator, ProcessOrder processOrder, const QByteArray& operatorAsText) override;
     virtual void performPathPainting(const QPainterPath& path, bool stroke, bool fill, bool text, Qt::FillRule fillRule) override;
     virtual bool isContentKindSuppressed(ContentKind kind) const override;
+    virtual bool performOriginalImagePainting(const PDFImage& image, const PDFStream* stream) override;
+    virtual void performImagePainting(const QImage& image) override;
+    virtual void performClipping(const QPainterPath& path, Qt::FillRule fillRule) override;
+    virtual void performSaveGraphicState(ProcessOrder order) override;
+    virtual void performRestoreGraphicState(ProcessOrder order) override;
+    virtual void performUpdateGraphicsState(const PDFPageContentProcessorState& state) override;
 
 private:
-    QDomDocument m_document;
-    QDomElement m_currentElement;
-    QDomElement m_textElement;
-    int m_contentElementId;
-    QRectF m_boundingRect;
+    PDFEditedPageContent m_content;
+    QRectF m_textBoundingRect;
+    std::stack<QPainterPath> m_clippingPaths;
+    std::unique_ptr<PDFEditedPageContentElementText> m_contentElementText;
 };
 
 }   // namespace pdf

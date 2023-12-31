@@ -114,8 +114,6 @@ private:
     void updateGraphics();
     void updateDockWidget();
 
-    pdf::PDFWidgetTool* getActiveTool();
-
     QString getSignedFileName() const;
 
     std::array<QAction*, LastAction> m_actions;

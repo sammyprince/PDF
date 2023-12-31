@@ -455,8 +455,8 @@ void EditorPlugin::updateEditedPages()
         QList<pdf::PDFRenderError> errors = processor.processContents();
         Q_UNUSED(errors);
 
-        m_editedPageContent[pageIndex] = processor.getEditedPageContent();
-
+        m_editedPageContent[pageIndex] = processor.takeEditedPageContent();
+/*
         std::vector<pdf::PDFEditedPageContent::ContentTextInfo> textInfos = m_editedPageContent[pageIndex].getTextInfos();
         for (const pdf::PDFEditedPageContent::ContentTextInfo& textInfo : textInfos)
         {
@@ -471,7 +471,7 @@ void EditorPlugin::updateEditedPages()
             textBox->setContentId(textInfo.id);
 
             m_scene.addElement(textBox);
-        }
+        }*/
     }
 }
 
