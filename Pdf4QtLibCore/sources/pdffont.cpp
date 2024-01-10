@@ -716,7 +716,7 @@ void PDFRealizedFontImpl::fillTextSequence(const QByteArray& byteArray, TextSequ
                 if (glyphIndex)
                 {
                     const Glyph& glyph = getGlyph(glyphIndex);
-                    textSequence.items.emplace_back(&glyph.glyph, (*encoding)[static_cast<uint8_t>(byteArray[i])], glyph.advance);
+                    textSequence.items.emplace_back(&glyph.glyph, (*encoding)[static_cast<uint8_t>(byteArray[i])], glyph.advance, static_cast<CID>(byteArray[i]));
                 }
                 else
                 {
@@ -724,7 +724,7 @@ void PDFRealizedFontImpl::fillTextSequence(const QByteArray& byteArray, TextSequ
                     if (glyphWidth > 0)
                     {
                         const QPainterPath* nullpath = nullptr;
-                        textSequence.items.emplace_back(nullpath, QChar(), glyphWidth * m_pixelSize * FONT_WIDTH_MULTIPLIER);
+                        textSequence.items.emplace_back(nullpath, QChar(), glyphWidth * m_pixelSize * FONT_WIDTH_MULTIPLIER, static_cast<CID>(byteArray[i]));
                     }
                 }
             }
@@ -751,7 +751,7 @@ void PDFRealizedFontImpl::fillTextSequence(const QByteArray& byteArray, TextSequ
                 {
                     QChar character = toUnicode->getToUnicode(cid);
                     const Glyph& glyph = getGlyph(glyphIndex);
-                    textSequence.items.emplace_back(&glyph.glyph, character, glyph.advance);
+                    textSequence.items.emplace_back(&glyph.glyph, character, glyph.advance, cid);
                 }
                 else
                 {
@@ -766,7 +766,7 @@ void PDFRealizedFontImpl::fillTextSequence(const QByteArray& byteArray, TextSequ
                         // We do not multiply advance with font size and FONT_WIDTH_MULTIPLIER, because in the code,
                         // "advance" is treated as in font space.
                         const QPainterPath* nullpath = nullptr;
-                        textSequence.items.emplace_back(nullpath, QChar(), -glyphWidth);
+                        textSequence.items.emplace_back(nullpath, QChar(), -glyphWidth, cid);
                     }
                 }
             }
@@ -2647,7 +2647,7 @@ void PDFRealizedType3FontImpl::fillTextSequence(const QByteArray& byteArray, Tex
 
         if (contentStream)
         {
-            textSequence.items.emplace_back(contentStream, character, width);
+            textSequence.items.emplace_back(contentStream, character, width, index);
         }
         else
         {

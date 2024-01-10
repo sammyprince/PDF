@@ -41,7 +41,6 @@ public:
     {
         Path,
         Text,
-        Clipping,
         Image
     };
 
@@ -93,24 +92,6 @@ private:
     bool m_fillPath;
 };
 
-class PDFEditedPageContentElementClipping : public PDFEditedPageContentElement
-{
-public:
-    PDFEditedPageContentElementClipping(PDFPageContentProcessorState state, QPainterPath path);
-    virtual ~PDFEditedPageContentElementClipping() = default;
-
-    virtual Type getType() const override;
-    virtual PDFEditedPageContentElementClipping* clone() const override;
-    virtual PDFEditedPageContentElementClipping* asClipping() override { return this; }
-    virtual const PDFEditedPageContentElementClipping* asClipping() const override { return this; }
-
-    QPainterPath getPath() const;
-    void setPath(QPainterPath newPath);
-
-private:
-    QPainterPath m_path;
-};
-
 class PDFEditedPageContentElementImage : public PDFEditedPageContentElement
 {
 public:
@@ -141,6 +122,7 @@ public:
     {
         bool isUpdateGraphicState = false;
         bool isText = false;
+        TextSequence textSequence;
 
         PDFPageContentProcessorState state;
     };

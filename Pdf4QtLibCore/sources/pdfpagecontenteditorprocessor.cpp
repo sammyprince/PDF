@@ -412,11 +412,6 @@ void PDFEditedPageContent::addContentImage(PDFPageContentProcessorState state, P
     m_contentElements.emplace_back(new PDFEditedPageContentElementImage(std::move(state), std::move(imageObject), std::move(image)));
 }
 
-void PDFEditedPageContent::addContentClipping(PDFPageContentProcessorState state, QPainterPath path)
-{
-    m_contentElements.emplace_back(new PDFEditedPageContentElementClipping(std::move(state), std::move(path)));
-}
-
 void PDFEditedPageContent::addContentElement(std::unique_ptr<PDFEditedPageContentElement> element)
 {
     m_contentElements.emplace_back(std::move(element));
@@ -533,33 +528,6 @@ QImage PDFEditedPageContentElementImage::getImage() const
 void PDFEditedPageContentElementImage::setImage(const QImage& newImage)
 {
     m_image = newImage;
-}
-
-PDFEditedPageContentElementClipping::PDFEditedPageContentElementClipping(PDFPageContentProcessorState state, QPainterPath path) :
-    PDFEditedPageContentElement(std::move(state)),
-    m_path(std::move(path))
-{
-
-}
-
-PDFEditedPageContentElement::Type PDFEditedPageContentElementClipping::getType() const
-{
-    return Type::Clipping;
-}
-
-PDFEditedPageContentElementClipping* PDFEditedPageContentElementClipping::clone() const
-{
-    return new PDFEditedPageContentElementClipping(getState(), getPath());
-}
-
-QPainterPath PDFEditedPageContentElementClipping::getPath() const
-{
-    return m_path;
-}
-
-void PDFEditedPageContentElementClipping::setPath(QPainterPath newPath)
-{
-    m_path = std::move(newPath);
 }
 
 PDFEditedPageContentElementText::PDFEditedPageContentElementText(PDFPageContentProcessorState state) :
