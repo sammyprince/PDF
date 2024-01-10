@@ -3201,6 +3201,8 @@ void PDFPageContentProcessor::drawText(const TextSequence& textSequence)
         return;
     }
 
+    performProcessTextSequence(textSequence, ProcessOrder::BeforeOperation);
+
     const PDFRealizedFontPointer& font = getRealizedFont();
     if (font)
     {
@@ -3376,6 +3378,8 @@ void PDFPageContentProcessor::drawText(const TextSequence& textSequence)
     {
         throw PDFRendererException(RenderErrorType::Error, PDFTranslationContext::tr("Invalid font, text can't be printed."));
     }
+
+    performProcessTextSequence(textSequence, ProcessOrder::AfterOperation);
 }
 
 PDFRealizedFontPointer PDFPageContentProcessor::getRealizedFontImpl()
