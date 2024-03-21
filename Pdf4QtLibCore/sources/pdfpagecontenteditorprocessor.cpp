@@ -106,6 +106,18 @@ void PDFPageContentEditorProcessor::performUpdateGraphicsState(const PDFPageCont
     }
 }
 
+void PDFPageContentEditorProcessor::performProcessTextSequence(const TextSequence& textSequence, ProcessOrder order)
+{
+    if (order == ProcessOrder::BeforeOperation)
+    {
+        PDFEditedPageContentElementText::Item item;
+        item.isText = true;
+        item.textSequence = textSequence;
+
+        m_contentElementText->addItem(item);
+    }
+}
+
 bool PDFPageContentEditorProcessor::performOriginalImagePainting(const PDFImage& image, const PDFStream* stream)
 {
     Q_UNUSED(image);
@@ -460,6 +472,12 @@ PDFEditedPageContentElement::Type PDFEditedPageContentElementPath::getType() con
 PDFEditedPageContentElementPath* PDFEditedPageContentElementPath::clone() const
 {
     return new PDFEditedPageContentElementPath(getState(), getPath(), getStrokePath(), getFillPath());
+}
+
+QRectF PDFEditedPageContentElementPath::getBoundingBox() const
+{
+    QPainterPath mappedPath = getState().getCurrentTransformationMatrix().map(m_path);
+    return mappedPath.boundingRect();
 }
 
 QPainterPath PDFEditedPageContentElementPath::getPath() const

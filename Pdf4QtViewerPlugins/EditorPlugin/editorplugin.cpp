@@ -456,6 +456,13 @@ void EditorPlugin::updateEditedPages()
         Q_UNUSED(errors);
 
         m_editedPageContent[pageIndex] = processor.takeEditedPageContent();
+
+        size_t elementCount = m_editedPageContent[pageIndex].getElementCount();
+        for (size_t i = 0; i <elementCount; ++i)
+        {
+            pdf::PDFEditedPageContentElement* element = m_editedPageContent[pageIndex].getElement(i);
+
+        }
 /*
         std::vector<pdf::PDFEditedPageContent::ContentTextInfo> textInfos = m_editedPageContent[pageIndex].getTextInfos();
         for (const pdf::PDFEditedPageContent::ContentTextInfo& textInfo : textInfos)

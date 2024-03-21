@@ -28,7 +28,6 @@ namespace pdf
 class PDFEditedPageContentElementPath;
 class PDFEditedPageContentElementText;
 class PDFEditedPageContentElementImage;
-class PDFEditedPageContentElementClipping;
 
 class PDFEditedPageContentElement
 {
@@ -53,14 +52,13 @@ public:
     virtual PDFEditedPageContentElementText* asText() { return nullptr; }
     virtual const PDFEditedPageContentElementText* asText() const { return nullptr; }
 
-    virtual PDFEditedPageContentElementClipping* asClipping() { return nullptr; }
-    virtual const PDFEditedPageContentElementClipping* asClipping() const { return nullptr; }
-
     virtual PDFEditedPageContentElementImage* asImage() { return nullptr; }
     virtual const PDFEditedPageContentElementImage* asImage() const { return nullptr; }
 
     const PDFPageContentProcessorState& getState() const;
     void setState(const PDFPageContentProcessorState& newState);
+
+    virtual QRectF getBoundingBox() const = 0;
 
 protected:
     PDFPageContentProcessorState m_state;
@@ -76,6 +74,7 @@ public:
     virtual PDFEditedPageContentElementPath* clone() const override;
     virtual PDFEditedPageContentElementPath* asPath() override { return this; }
     virtual const PDFEditedPageContentElementPath* asPath() const override { return this; }
+    virtual QRectF getBoundingBox() const override;
 
     QPainterPath getPath() const;
     void setPath(QPainterPath newPath);
@@ -164,6 +163,9 @@ public:
     void addContentClipping(PDFPageContentProcessorState state, QPainterPath path);
     void addContentElement(std::unique_ptr<PDFEditedPageContentElement> element);
 
+    std::size_t getElementCount() const { return m_contentElements.size(); }
+    PDFEditedPageContentElement* getElement(size_t index) const { return m_contentElements.at(index).get(); }
+
     PDFEditedPageContentElement* getBackElement() const;
 
 private:
@@ -196,6 +198,7 @@ protected:
     virtual void performSaveGraphicState(ProcessOrder order) override;
     virtual void performRestoreGraphicState(ProcessOrder order) override;
     virtual void performUpdateGraphicsState(const PDFPageContentProcessorState& state) override;
+    virtual void performProcessTextSequence(const TextSequence& textSequence, ProcessOrder order) override;
 
 private:
     PDFEditedPageContent m_content;
